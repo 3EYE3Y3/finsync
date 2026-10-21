@@ -1,0 +1,19 @@
+name: Feature request
+description: An idea for FinSync
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The problem or situation, rather than a particular solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could FinSync help?
+  - type: input
+    id: device
+    attributes:
+      label: Device / player (if it matters)

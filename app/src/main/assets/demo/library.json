@@ -1,0 +1,256 @@
+{
+ "server": "FinSync sample library",
+ "albums": [
+  {
+   "id": "al1",
+   "name": "Pure Tones",
+   "artist": "The Sine Waves",
+   "year": 2024
+  },
+  {
+   "id": "al2",
+   "name": "Second Harmonic",
+   "artist": "The Sine Waves",
+   "year": 2025
+  },
+  {
+   "id": "al3",
+   "name": "Questions: \"Answers\"?",
+   "artist": "Chord Quartet",
+   "year": 2023
+  },
+  {
+   "id": "al4",
+   "name": "Tempo Studies",
+   "artist": "Metronome Collective",
+   "year": 2022
+  }
+ ],
+ "tracks": [
+  {
+   "id": "t01",
+   "name": "A Major Chord",
+   "artist": "The Sine Waves",
+   "album": "Pure Tones",
+   "albumId": "al1",
+   "track": 1,
+   "year": 2024,
+   "file": "t01.flac",
+   "container": "flac",
+   "path": "/music/The Sine Waves/Pure Tones (2024)/01 A Major Chord.flac",
+   "runTimeTicks": 90000000,
+   "lyrics": [
+    {
+     "text": "(a sample tone: no words)",
+     "start": 0
+    },
+    {
+     "text": "Three notes, played together",
+     "start": 20000000
+    },
+    {
+     "text": "Fading out",
+     "start": 40000000
+    }
+   ]
+  },
+  {
+   "id": "t02",
+   "name": "Slow Sweep",
+   "artist": "The Sine Waves",
+   "album": "Pure Tones",
+   "albumId": "al1",
+   "track": 2,
+   "year": 2024,
+   "file": "t02.flac",
+   "container": "flac",
+   "path": "/music/The Sine Waves/Pure Tones (2024)/02 Slow Sweep.flac",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t03",
+   "name": "Octaves",
+   "artist": "The Sine Waves",
+   "album": "Pure Tones",
+   "albumId": "al1",
+   "track": 3,
+   "year": 2024,
+   "file": "t03.flac",
+   "container": "flac",
+   "path": "/music/The Sine Waves/Pure Tones (2024)/03 Octaves.flac",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t04",
+   "name": "Perfect Fifths",
+   "artist": "The Sine Waves",
+   "album": "Pure Tones",
+   "albumId": "al1",
+   "track": 4,
+   "year": 2024,
+   "file": "t04.flac",
+   "container": "flac",
+   "path": "/music/The Sine Waves/Pure Tones (2024)/04 Perfect Fifths.flac",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t05",
+   "name": "Minor Thoughts",
+   "artist": "The Sine Waves",
+   "album": "Second Harmonic",
+   "albumId": "al2",
+   "track": 1,
+   "year": 2025,
+   "file": "t05.mp3",
+   "container": "mp3",
+   "path": "/music/The Sine Waves/Second Harmonic (2025)/01 Minor Thoughts.mp3",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t06",
+   "name": "Rising",
+   "artist": "The Sine Waves",
+   "album": "Second Harmonic",
+   "albumId": "al2",
+   "track": 2,
+   "year": 2025,
+   "file": "t06.mp3",
+   "container": "mp3",
+   "path": "/music/The Sine Waves/Second Harmonic (2025)/02 Rising.mp3",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t07",
+   "name": "Square Dance",
+   "artist": "The Sine Waves",
+   "album": "Second Harmonic",
+   "albumId": "al2",
+   "track": 3,
+   "year": 2025,
+   "file": "t07.mp3",
+   "container": "mp3",
+   "path": "/music/The Sine Waves/Second Harmonic (2025)/03 Square Dance.mp3",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t08",
+   "name": "Why? Because: Yes*",
+   "artist": "Chord Quartet",
+   "album": "Questions: \"Answers\"?",
+   "albumId": "al3",
+   "track": 1,
+   "year": 2023,
+   "file": "t08.flac",
+   "container": "flac",
+   "path": "/music/Chord Quartet/Questions: \"Answers\"? (2023)/01 Why? Because: Yes*.flac",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t09",
+   "name": "Suspended",
+   "artist": "Chord Quartet",
+   "album": "Questions: \"Answers\"?",
+   "albumId": "al3",
+   "track": 2,
+   "year": 2023,
+   "file": "t09.flac",
+   "container": "flac",
+   "path": "/music/Chord Quartet/Questions: \"Answers\"? (2023)/02 Suspended.flac",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t10",
+   "name": "Resolution",
+   "artist": "Chord Quartet",
+   "album": "Questions: \"Answers\"?",
+   "albumId": "al3",
+   "track": 3,
+   "year": 2023,
+   "file": "t10.flac",
+   "container": "flac",
+   "path": "/music/Chord Quartet/Questions: \"Answers\"? (2023)/03 Resolution.flac",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t11",
+   "name": "Largo (60 BPM)",
+   "artist": "Metronome Collective",
+   "album": "Tempo Studies",
+   "albumId": "al4",
+   "track": 1,
+   "year": 2022,
+   "file": "t11.mp3",
+   "container": "mp3",
+   "path": "/music/Metronome Collective/Tempo Studies (2022)/01 Largo (60 BPM).mp3",
+   "runTimeTicks": 90000000,
+   "lyrics": [
+    {
+     "text": "One",
+     "start": 0
+    },
+    {
+     "text": "Two",
+     "start": 20000000
+    },
+    {
+     "text": "Three",
+     "start": 40000000
+    },
+    {
+     "text": "Four",
+     "start": 60000000
+    }
+   ]
+  },
+  {
+   "id": "t12",
+   "name": "Andante (90 BPM)",
+   "artist": "Metronome Collective",
+   "album": "Tempo Studies",
+   "albumId": "al4",
+   "track": 2,
+   "year": 2022,
+   "file": "t12.mp3",
+   "container": "mp3",
+   "path": "/music/Metronome Collective/Tempo Studies (2022)/02 Andante (90 BPM).mp3",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  },
+  {
+   "id": "t13",
+   "name": "Presto (160 BPM)",
+   "artist": "Metronome Collective",
+   "album": "Tempo Studies",
+   "albumId": "al4",
+   "track": 3,
+   "year": 2022,
+   "file": "t13.mp3",
+   "container": "mp3",
+   "path": "/music/Metronome Collective/Tempo Studies (2022)/03 Presto (160 BPM).mp3",
+   "runTimeTicks": 90000000,
+   "lyrics": []
+  }
+ ],
+ "playlists": [
+  {
+   "id": "pl1",
+   "name": "Sample Mix",
+   "trackIds": [
+    "t02",
+    "t06",
+    "t11",
+    "t08",
+    "t01"
+   ]
+  }
+ ]
+}

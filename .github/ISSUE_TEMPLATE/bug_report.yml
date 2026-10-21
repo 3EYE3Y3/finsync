@@ -1,0 +1,51 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please don't include your server's address, user names, tokens or anything else private.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: FinSync version and build
+      description: e.g. 0.1.0 (6), Play or GitHub APK
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device / player
+      description: e.g. HiBy R4, FiiO M11S, Pixel 8
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+    validations:
+      required: true
+  - type: input
+    id: jellyfin
+    attributes:
+      label: Jellyfin server version
+  - type: input
+    id: storage
+    attributes:
+      label: Card / folder
+      description: e.g. 512 GB SD card (exFAT), internal storage
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs from the app
+      description: |
+        If you can, connect the device to a computer and run `adb logcat -s FinSync`, then reproduce the problem.
+        Check the log for anything private before pasting.
+      render: text

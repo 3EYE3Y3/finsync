@@ -1,0 +1,17 @@
+.gradle/
+build/
+.kotlin/
+local.properties
+*.iml
+.idea/
+# Never commit tokens or local state
+/.finsync-local/
+__pycache__/
+/builds/
+# Machine-specific build environment (JAVA_HOME, ANDROID_HOME); see the README
+/env.sh
+# Signing keys never belong here (they live in ~/.config/finsync/)
+*.jks
+*.keystore
+signing.properties
+*-signing.properties
