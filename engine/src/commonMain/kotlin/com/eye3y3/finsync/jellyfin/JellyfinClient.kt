@@ -95,6 +95,11 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
         return finishQuickConnect(start.secret)
     }
 
+    /** Ends this sign-in on the server, so the token stops working. */
+    suspend fun signOut() {
+        send(HttpMethod.Post, "/Sessions/Logout")
+    }
+
     suspend fun signInWithPassword(user: String, password: String): Session =
         signedIn("/Users/AuthenticateByName", buildJsonObject { put("Username", user); put("Pw", password) })
 

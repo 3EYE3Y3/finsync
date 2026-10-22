@@ -35,6 +35,22 @@ class DownloaderTest {
 
     private fun fileBytes() = fs.read(target) { readByteArray() }
 
+    @Test fun serverIdsCannotNameAPathOutsideThePartialFolder() = runTest {
+        for (id in listOf("../../../Music/evil", "/etc/evil", "a/b", "..", "")) {
+            assertTrue(tempName(id).all { it.isLetterOrDigit() || it == '-' }, id)
+            assertFailsWith<FinSyncError> { downloader { HttpStatusCode.OK to byteArrayOf(1, 2, 3) }.fetch(id, 3, target) }
+            assertEquals(listOf(partial), fs.allPaths.filter { fs.metadata(it).isRegularFile }.map { it.parent!! }.distinct().ifEmpty { listOf(partial) })
+        }
+        assertEquals("0123abcdef-ABC", tempName("0123abcdef-ABC"))
+        assertTrue(tempName("x/y") != tempName("x/z"))
+    }
+
+    @Test fun neverWritesMoreThanTheExpectedSize() = runTest {
+        assertFailsWith<FinSyncError.BadDownload> { downloader { HttpStatusCode.OK to data + ByteArray(1_000_000) }.fetch("id1", data.size.toLong(), target) }
+        assertFalse(fs.exists(target))
+        assertFalse(fs.exists(partial / "id1.part"))
+    }
+
     @Test fun downloadsAndMovesIntoPlace() = runTest {
         downloader { HttpStatusCode.OK to data }.fetch("id1", data.size.toLong(), target)
         assertContentEquals(data, fileBytes())

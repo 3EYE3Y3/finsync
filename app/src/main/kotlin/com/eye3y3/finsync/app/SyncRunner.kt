@@ -23,6 +23,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -122,6 +126,22 @@ object SyncRunner {
             Log.i(TAG, "Check started")
             engine.plan(listener("Checking")).also { lastPlan = System.currentTimeMillis() to it; Log.i(TAG, "Check finished") }
         }()
+    }
+
+    /** Ends a sign-in on the server in the background; failures (offline, server gone) are ignored. */
+    @OptIn(DelicateCoroutinesApi::class)
+    fun signOut(context: Context, server: String, token: String) {
+        val deviceId = Settings(context).deviceId
+        GlobalScope.launch(Dispatchers.IO) {
+            val http = createHttpClient()
+            try {
+                withTimeout(10_000) { JellyfinClient(http, ServerConfig(server, deviceId, "FinSync on ${Build.MODEL}"), token).signOut() }
+            } catch (e: Exception) {
+                Log.i(TAG, "Sign-out on the server didn't go through: ${e.message}")
+            } finally {
+                http.close()
+            }
+        }
     }
 
     /** A full sync. Uses the plan from the check screen when it's less than half an hour old. */

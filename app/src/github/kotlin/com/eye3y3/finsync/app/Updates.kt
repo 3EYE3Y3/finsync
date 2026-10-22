@@ -62,8 +62,10 @@ internal object GitHubUpdates {
         val assets = rel["assets"]?.jsonArray?.associate {
             it.jsonObject["name"]!!.jsonPrimitive.content to it.jsonObject["browser_download_url"]!!.jsonPrimitive.content
         } ?: return null
-        val v = json.parseToJsonElement(fetch(assets["version.json"] ?: return null)).jsonObject
-        val apk = assets[v["apk"]?.jsonPrimitive?.content] ?: rel["html_url"]?.jsonPrimitive?.content ?: return null
+        // Only links into this repository are followed or offered.
+        val ours = "https://github.com/${BuildConfig.GITHUB_REPO}/"
+        val v = json.parseToJsonElement(fetch(assets["version.json"]?.takeIf { it.startsWith(ours) } ?: return null)).jsonObject
+        val apk = (assets[v["apk"]?.jsonPrimitive?.content] ?: rel["html_url"]?.jsonPrimitive?.content)?.takeIf { it.startsWith(ours) } ?: return null
         return Release(v["versionCode"]!!.jsonPrimitive.int, v["versionName"]!!.jsonPrimitive.content, apk)
     }
 

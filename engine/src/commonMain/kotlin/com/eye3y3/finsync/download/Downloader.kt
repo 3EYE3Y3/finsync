@@ -28,7 +28,7 @@ class Downloader(
     /** Fetches item [itemId] (expected to be [expectedSize] bytes) and puts it at [target]. [label] is used in messages. */
     suspend fun fetch(itemId: String, expectedSize: Long, target: Path, label: String = target.name) {
         fs.createDirectories(partialDir)
-        val part = partialDir / "$itemId.part"
+        val part = partialDir / "${tempName(itemId)}.part"
         var attempt = 0
         while (true) {
             try {
@@ -56,14 +56,19 @@ class Downloader(
             client.download(itemId, have) { status, _, body ->
                 val append = status == 206 && have > 0
                 val sink = (if (append) fs.appendingSink(part) else fs.sink(part)).buffer()
+                var written = if (append) have else 0L
                 sink.use {
                     val buf = ByteArray(64 * 1024)
                     while (true) {
                         val n = body.readAvailable(buf, 0, buf.size)
                         if (n < 0) break
+                        // Never more than the server said the file holds: a longer answer is wrong, and must not fill the card.
+                        if (written + n > expected) { written += n; break }
                         it.write(buf, 0, n)
+                        written += n
                     }
                 }
+                if (written > expected) { fs.delete(part); throw FinSyncError.BadDownload(label) }
             }
         }
         val got = sizeOf(part)
@@ -115,3 +120,11 @@ object AudioSignature {
 
     fun looksRight(ext: String, h: ByteArray): Boolean = detect(h) != null || ext.lowercase() !in KNOWN
 }
+
+/**
+ * A file name for temporary files of server item [id]. Jellyfin ids are plain hex, but they come from
+ * the server, so anything else (a "../" or a "/") is replaced by a hash and can't name a path elsewhere.
+ */
+fun tempName(id: String): String =
+    if (id.length in 1..64 && id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }) id
+    else "id-" + id.encodeToByteArray().fold(0xcbf29ce484222325uL) { h, b -> (h xor b.toUByte().toULong()) * 0x100000001b3uL }.toString(16)

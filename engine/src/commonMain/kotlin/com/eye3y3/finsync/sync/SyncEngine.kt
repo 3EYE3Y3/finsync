@@ -1,6 +1,7 @@
 package com.eye3y3.finsync.sync
 
 import com.eye3y3.finsync.download.Downloader
+import com.eye3y3.finsync.download.tempName
 import com.eye3y3.finsync.extras.Sidecars
 import com.eye3y3.finsync.jellyfin.FinSyncError
 import com.eye3y3.finsync.jellyfin.JellyfinClient
@@ -366,7 +367,7 @@ class SyncEngine(
             }
         } else {
             fs.createDirectories(store.partialDir)
-            val part = store.partialDir / "${x.track.id}.reuse"
+            val part = store.partialDir / "${tempName(x.track.id)}.reuse"
             fs.openReadOnly(src).use { input ->
                 fs.sink(part).buffer().use { out ->
                     out.write(header)

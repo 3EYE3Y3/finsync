@@ -125,6 +125,10 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
         Body("Type the address of your Jellyfin server, as you would in a browser.")
         OutlinedTextField(url, { url = it }, label = { Text("Server address") }, placeholder = { Text("http://192.168.1.10:8096") },
             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
+        if (plainHttpOutsideHome(url)) Text(
+            "This address isn't on your home network and doesn't use https, so others on the network could read your sign-in. Use https://, or a VPN such as Tailscale.",
+            color = MaterialTheme.colorScheme.error, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp),
+        )
         if (usePassword) {
             OutlinedTextField(user, { user = it }, label = { Text("User name") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
             OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true,
@@ -346,7 +350,12 @@ private fun HomeScreen(s: Settings, go: (Screen) -> Unit) {
             Text("Card folder: ${s.treeName ?: "?"} → ${s.folderName}", fontSize = 14.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(enabled = !status.running, onClick = { go(Screen.FOLDER) }) { Text("Change folder") }
-                OutlinedButton(enabled = !status.running, onClick = { s.token = null; s.setupDone = false; go(Screen.SERVER) }) { Text("Sign out") }
+                OutlinedButton(enabled = !status.running, onClick = {
+                    // End the sign-in on the server too, so the token stops working (best effort: offline, it is just forgotten).
+                    val server = s.server; val token = s.token
+                    if (server != null && token != null) SyncRunner.signOut(ctx, server, token)
+                    s.token = null; s.setupDone = false; go(Screen.SERVER)
+                }) { Text("Sign out") }
             }
         }
         TextButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(feedbackUrl()))) }, modifier = Modifier.padding(top = 8.dp)) {
