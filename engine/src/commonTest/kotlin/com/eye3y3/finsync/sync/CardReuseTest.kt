@@ -103,6 +103,24 @@ class CardReuseTest {
         assertTrue(e.execute(e.plan()).let { it.reused == 0 && it.downloaded == 0 })
     }
 
+    @Test fun aFailedInPlaceReuseLeavesTheUsersFileExactlyAsItWas() = runTest {
+        val original = AudioFixtures.flac(flacA, "TITLE=Alpha (old tags)", padding = 300)
+        put("HIFI/old rip/Alpha.flac", original)
+        val e = engine()
+        val plan = e.plan()
+        assertTrue(plan.card.reuses.single().inPlace)
+        // The server's copy changes between the check and the sync (say, re-ripped): the audio no longer matches.
+        val changed = AudioFixtures.flac(AudioFixtures.flacFrames(40_000, 99), "TITLE=Alpha (new tags)", padding = 300)
+        server.tracks = server.tracks.map { if (it.id == "tA") MockTrack("tA", it.path, "al1", changed, runTimeTicks = 100_000_000) else it }
+        val r = e.execute(plan)
+        assertEquals(0, r.reused)
+        assertContentEquals(original, fs.read(card / "HIFI/old rip/Alpha.flac") { readByteArray() }, "the user's file is back, byte for byte")
+        // The next sync gets the server's new copy; the user's file stays where it is.
+        e.execute(e.plan())
+        assertContentEquals(changed, fs.read(dest / "Art/Alb/01 Alpha.flac") { readByteArray() })
+        assertContentEquals(original, fs.read(card / "HIFI/old rip/Alpha.flac") { readByteArray() })
+    }
+
     @Test fun leftoversGoOnlyWhenConfirmedAndOnlyWhileTheMirrorHasTheTrack() = runTest {
         oldCard()
         val e = engine()

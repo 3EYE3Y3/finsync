@@ -37,6 +37,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -172,7 +174,7 @@ class SyncEngine(
                 val rel = p.relativeTo(root).toString().replace('\\', '/')
                 val meta = fs.metadataOrNull(p) ?: continue
                 if (meta.isDirectory) {
-                    if (p.name.startsWith(".") || p.name in skip || rel == destRel) continue
+                    if (p.name.startsWith(".") || p.name in skip || rel.equals(destRel, ignoreCase = true)) continue
                     walk(p)
                 } else if (meta.isRegularFile && p.name.substringAfterLast('.', "").lowercase() in AUDIO_EXTENSIONS) {
                     out += CardFile(rel, meta.size ?: 0L)
@@ -212,6 +214,8 @@ class SyncEngine(
 
     private suspend fun run(plan: SyncPlan, say: SyncListener): SyncResult {
         val m = store.load() ?: Manifest()
+        // A plan made for another server (the folder changed since it was made) is never carried out here.
+        if (m.serverId.isNotEmpty() && plan.serverId.isNotEmpty() && m.serverId != plan.serverId) throw FinSyncError.WrongTarget("server")
         m.serverId = plan.serverId; m.userId = plan.userId; m.libraryId = plan.libraryId
         val lock = Mutex()
         val failures = ArrayList<String>()
@@ -260,6 +264,10 @@ class SyncEngine(
                     reuse(x, root, m, ::commit)
                 } catch (e: FinSyncError) {
                     if (e is FinSyncError.SignedOut) throw e
+                    ReuseOutcome.FAILED
+                } catch (e: Exception) {
+                    // Anything unexpected (an odd server reply, a card error): this track is downloaded instead.
+                    if (e is kotlin.coroutines.cancellation.CancellationException) throw e
                     ReuseOutcome.FAILED
                 }
                 if (outcome == ReuseOutcome.DONE) reused++ else retry += Download(x.track, x.target, replace = false)
@@ -358,13 +366,39 @@ class SyncEngine(
         val trailer = server.read(x.server.payloadEnd, x.server.trailerLength.toInt())
         if (header.size.toLong() != x.server.headerLength || trailer.size.toLong() != x.server.trailerLength) return ReuseOutcome.FAILED
         dst.parent?.let { fs.createDirectories(it) }
+        suspend fun verified() = fs.metadataOrNull(dst)?.size == x.track.size && fs.openReadOnly(dst).use { h ->
+            val local = FileByteReader(h)
+            local.read(0, minOf(header.size, 4096)).contentEquals(header.copyOf(minOf(header.size, 4096))) &&
+                CardMatcher.samePayload(server, x.server, local, x.server)
+        }
         if (x.inPlace) {
-            fs.atomicMove(src, dst)
-            fs.openReadWrite(dst).use { h ->
-                h.write(0, header, 0, header.size)
-                h.write(x.server.payloadEnd, trailer, 0, trailer.size)
-                h.flush()
+            // The user's own file is moved and retagged, so keep its tag bytes: if anything goes wrong,
+            // they are written back and the file goes back where it was, as it was.
+            val (oldHead, oldTail) = fs.openReadOnly(src).use { h ->
+                val r = FileByteReader(h)
+                r.read(0, header.size) to r.read(x.server.payloadEnd, trailer.size)
             }
+            if (oldHead.size != header.size || oldTail.size != trailer.size) return ReuseOutcome.FAILED
+            fs.atomicMove(src, dst)
+            var kept = false
+            try {
+                fs.openReadWrite(dst).use { h ->
+                    h.write(0, header, 0, header.size)
+                    h.write(x.server.payloadEnd, trailer, 0, trailer.size)
+                    h.flush()
+                }
+                kept = verified()
+            } finally {
+                if (!kept) withContext(NonCancellable) {
+                    fs.openReadWrite(dst).use { h ->
+                        h.write(0, oldHead, 0, oldHead.size)
+                        h.write(x.server.payloadEnd, oldTail, 0, oldTail.size)
+                        h.flush()
+                    }
+                    fs.atomicMove(dst, src)
+                }
+            }
+            if (!kept) return ReuseOutcome.FAILED
         } else {
             fs.createDirectories(store.partialDir)
             val part = store.partialDir / "${tempName(x.track.id)}.reuse"
@@ -384,18 +418,14 @@ class SyncEngine(
             }
             if (fs.metadataOrNull(part)?.size != x.track.size) { fs.delete(part, mustExist = false); return ReuseOutcome.FAILED }
             fs.atomicMove(part, dst)
+            // The rebuilt copy is FinSync's own; the user's original is removed only once the copy checks out.
+            val ok = try { verified() } catch (e: Exception) { if (e is kotlin.coroutines.cancellation.CancellationException) throw e; false }
+            if (!ok) {
+                fs.delete(dst, mustExist = false)
+                return ReuseOutcome.FAILED
+            }
+            fs.delete(src, mustExist = false)
         }
-        val ok = fs.metadataOrNull(dst)?.size == x.track.size && fs.openReadOnly(dst).use { h ->
-            val local = FileByteReader(h)
-            local.read(0, minOf(header.size, 4096)).contentEquals(header.copyOf(minOf(header.size, 4096))) &&
-                CardMatcher.samePayload(server, x.server, local, x.server)
-        }
-        if (!ok) {
-            // The audio was checked when planning, so this is a write problem: throw the result away and download.
-            fs.delete(dst, mustExist = false)
-            return ReuseOutcome.FAILED
-        }
-        if (!x.inPlace) fs.delete(src, mustExist = false)
         commit { files[x.target] = ManifestEntry(x.track.id, Manifest.KIND_TRACK, x.track.size, x.track.changeKey) }
         pruneEmptyUnder(root, src.parent)
         return ReuseOutcome.DONE

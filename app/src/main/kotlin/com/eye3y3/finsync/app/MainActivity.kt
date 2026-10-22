@@ -158,6 +158,7 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
                         else client.signInWithQuickConnect(10 * 60_000L) { code = it }
                         s.demo = false; s.usedRealServer = true
                         s.server = base; s.token = session.token; s.userName = session.userName
+                        SyncRunner.forgetPlan()
                         done()
                     } catch (e: FinSyncError) {
                         error = e.message
@@ -204,6 +205,7 @@ private fun FolderScreen(s: Settings, done: () -> Unit) {
                     tree.root.name to tree.freeBytes()
                 }
                 s.treeUri = uri.toString(); s.treeName = n
+                SyncRunner.forgetPlan()
                 name = n; free = f; error = null
             } catch (e: Exception) {
                 error = "FinSync can't use that folder: ${e.message}"

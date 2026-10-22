@@ -89,7 +89,8 @@ class ManifestStore(
         fs.createDirectories(stateDir)
         if (tryCreateLock()) return
         val beat = lastHeartbeat()
-        if (beat != null && now() - beat <= STALE_MS) throw FinSyncError.Busy()
+        // A heartbeat far in the future (another device's clock, an edited file) counts as stale too.
+        if (beat != null && kotlin.math.abs(now() - beat) <= STALE_MS) throw FinSyncError.Busy()
         // Left behind by a sync that stopped without unlocking (killed, crashed, battery died).
         fs.delete(lockFile, mustExist = false)
         if (!tryCreateLock() || lockOwner() != owner) throw FinSyncError.Busy()
@@ -158,6 +159,8 @@ class ManifestStore(
         }
 
         fun resolve(dest: Path, rel: String): Path {
+            // FinSync never writes ':' or '\\' (see Naming), and on Windows they could name another drive.
+            require(':' !in rel && '\\' !in rel) { "Path outside the FinSync folder: $rel" }
             val p = rel.toPath(normalize = true)
             require(!p.isAbsolute && p.segments.none { it == ".." }) { "Path outside the FinSync folder: $rel" }
             return dest / p

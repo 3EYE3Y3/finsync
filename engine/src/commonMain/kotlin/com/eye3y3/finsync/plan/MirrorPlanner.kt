@@ -13,6 +13,8 @@ import com.eye3y3.finsync.playlist.Playlists
  * Files that are not in the manifest are never planned for deletion or replacement.
  */
 object MirrorPlanner {
+    private const val MAX_TRACK_BYTES = 1L shl 40
+
     /** [disk] maps every relative path now on the destination (outside .finsync) to its size. */
     fun plan(
         tracks: List<RemoteTrack>,
@@ -140,7 +142,8 @@ object MirrorPlanner {
     }
 
     private fun select(tracks: List<RemoteTrack>, o: PlanOptions): List<RemoteTrack> {
-        var list = tracks
+        // A track without a believable size can't be checked once downloaded (and would upset the space check).
+        var list = tracks.filter { it.size in 1..MAX_TRACK_BYTES }
         if (o.artists.isNotEmpty()) {
             val names = o.artists.mapTo(HashSet()) { it.lowercase() }
             list = list.filter { t -> (listOfNotNull(t.albumArtist) + t.artists).any { it.lowercase() in names } }

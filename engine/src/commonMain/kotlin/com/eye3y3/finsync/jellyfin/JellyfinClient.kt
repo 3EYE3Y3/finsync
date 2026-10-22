@@ -140,6 +140,7 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
                 parameter("Limit", PAGE_SIZE)
             }.obj()
             total = page.int("TotalRecordCount") ?: 0
+            if (all.size >= MAX_TRACKS) throw FinSyncError.Problem("The server lists more than $MAX_TRACKS tracks, which looks like a mistake.")
             val items = page.arr("Items")
             if (items.isEmpty()) break
             items.mapTo(all) { toTrack(it.obj()) }
@@ -291,6 +292,7 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
 
     private companion object {
         const val PAGE_SIZE = 500
+        const val MAX_TRACKS = 2_000_000
         val json = Json { ignoreUnknownKeys = true; isLenient = true }
     }
 }

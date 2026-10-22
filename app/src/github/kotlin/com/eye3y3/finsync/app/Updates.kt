@@ -62,12 +62,17 @@ internal object GitHubUpdates {
         val assets = rel["assets"]?.jsonArray?.associate {
             it.jsonObject["name"]!!.jsonPrimitive.content to it.jsonObject["browser_download_url"]!!.jsonPrimitive.content
         } ?: return null
-        // Only links into this repository are followed or offered.
-        val ours = "https://github.com/${BuildConfig.GITHUB_REPO}/"
-        val v = json.parseToJsonElement(fetch(assets["version.json"]?.takeIf { it.startsWith(ours) } ?: return null)).jsonObject
-        val apk = (assets[v["apk"]?.jsonPrimitive?.content] ?: rel["html_url"]?.jsonPrimitive?.content)?.takeIf { it.startsWith(ours) } ?: return null
+        val v = json.parseToJsonElement(fetch(assets["version.json"]?.takeIf(::ours) ?: return null)).jsonObject
+        val apk = (assets[v["apk"]?.jsonPrimitive?.content] ?: rel["html_url"]?.jsonPrimitive?.content)?.takeIf(::ours) ?: return null
         return Release(v["versionCode"]!!.jsonPrimitive.int, v["versionName"]!!.jsonPrimitive.content, apk)
     }
+
+    /** Only https links into this repository are followed or offered (checked after resolving any "../"). */
+    fun ours(url: String): Boolean = try {
+        val u = java.net.URI(url).normalize()
+        u.scheme == "https" && u.host == "github.com" && u.rawUserInfo == null && u.port == -1 &&
+            u.rawPath.orEmpty().startsWith("/${BuildConfig.GITHUB_REPO}/") && "/../" !in u.rawPath.orEmpty()
+    } catch (e: Exception) { false }
 
     fun get(url: String): String = (URL(url).openConnection() as HttpURLConnection).run {
         connectTimeout = 10_000; readTimeout = 10_000

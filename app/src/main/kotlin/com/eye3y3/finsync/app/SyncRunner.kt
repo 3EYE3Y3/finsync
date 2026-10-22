@@ -144,6 +144,9 @@ object SyncRunner {
         }
     }
 
+    /** The check screen's plan is out of date (the folder, server or what to sync changed). */
+    fun forgetPlan() { lastPlan = null }
+
     /** A full sync. Uses the plan from the check screen when it's less than half an hour old. */
     suspend fun sync(context: Context): Boolean? = exclusive("Syncing") {
         withEngine(context) { engine, s ->
