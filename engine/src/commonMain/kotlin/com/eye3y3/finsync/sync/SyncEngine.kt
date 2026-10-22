@@ -5,12 +5,14 @@ import com.eye3y3.finsync.download.tempName
 import com.eye3y3.finsync.extras.Sidecars
 import com.eye3y3.finsync.jellyfin.FinSyncError
 import com.eye3y3.finsync.jellyfin.JellyfinClient
+import com.eye3y3.finsync.jellyfin.Library
 import com.eye3y3.finsync.manifest.Manifest
 import com.eye3y3.finsync.manifest.ManifestEntry
 import com.eye3y3.finsync.manifest.ManifestStore
 import com.eye3y3.finsync.manifest.wallClockMillis
 import com.eye3y3.finsync.plan.MirrorPlanner
 import com.eye3y3.finsync.plan.PlanOptions
+import com.eye3y3.finsync.plan.Selection
 import com.eye3y3.finsync.plan.SyncPlan
 import com.eye3y3.finsync.playlist.Playlists
 import com.eye3y3.finsync.plan.Download
@@ -52,6 +54,10 @@ data class SyncOptions(
     val concurrency: Int = 2,
     /** Which music library to use when the server has several. */
     val libraryName: String? = null,
+    /** The music libraries to mirror, by id (ids no longer on the server are ignored). Null: see [allLibraries]. */
+    val libraryIds: Set<String>? = null,
+    /** With no [libraryName] or [libraryIds]: mirror every music library the account can see. */
+    val allLibraries: Boolean = false,
     /**
      * A folder holding music copied to the card some other way (it may contain the destination).
      * Its audio files are matched with the library by content: matches are moved into the mirror
@@ -101,29 +107,61 @@ class SyncEngine(
         val info = client.serverInfo()
         val manifest = store.load() ?: Manifest()
         if (manifest.serverId.isNotEmpty() && manifest.serverId != info.id) throw FinSyncError.WrongTarget("server")
-        val libs = client.musicLibraries(user.id)
-        val library = when {
-            libs.isEmpty() -> throw FinSyncError.Problem("This account has no music library on the server.")
-            options.libraryName != null -> libs.firstOrNull { it.name.equals(options.libraryName, true) }
-                ?: throw FinSyncError.Problem("There is no music library called \"${options.libraryName}\". Choices: ${libs.joinToString { it.name }}.")
-            libs.size == 1 -> libs.single()
-            else -> libs.firstOrNull { it.id == manifest.libraryId }
-                ?: throw FinSyncError.Problem("The server has several music libraries (${libs.joinToString { it.name }}). Choose one with --library.")
-        }
-        if (manifest.libraryId.isNotEmpty() && manifest.libraryId != library.id) throw FinSyncError.WrongTarget("library")
+        val libraries = chooseLibraries(client.musicLibraries(user.id), manifest)
         val asked = wallClockMillis()
-        listener.log("Plan: asking the server for the library")
-        val tracks = client.tracks(user.id, library.id)
+        listener.log("Plan: asking the server for ${libraries.joinToString { it.name }}")
+        val tracks = libraries.flatMap { client.tracks(user.id, it.id) }.distinctBy { it.id }
         val playlists = client.playlists(user.id)
         listener.log("Plan: ${tracks.size} tracks (${gb(tracks.sumOf { it.size })}), ${playlists.size} playlists, in ${secs(wallClockMillis() - asked)}")
         val folders = client.libraryFolders().orEmpty()
         val plan = MirrorPlanner.plan(tracks, playlists, manifest, ManifestStore.scanDisk(fs, dest), options.plan.copy(libraryFolders = folders.ifEmpty { options.plan.libraryFolders }))
-            .copy(serverId = info.id, userId = user.id, libraryId = library.id)
+            .copy(serverId = info.id, userId = user.id, libraryId = libraries.joinToString(",") { it.id })
         val root = options.reuseFrom ?: return plan
-        return withReuse(plan, tracks, root, listener)
+        return withReuse(plan, tracks, Selection.picked(options.plan, playlists), root, listener)
     }
 
-    private suspend fun withReuse(plan: SyncPlan, tracks: List<RemoteTrack>, root: Path, say: SyncListener): SyncPlan {
+    private fun chooseLibraries(libs: List<Library>, manifest: Manifest): List<Library> {
+        if (libs.isEmpty()) throw FinSyncError.Problem("This account has no music library on the server.")
+        val ids = options.libraryIds
+        return when {
+            options.libraryName != null -> {
+                val lib = libs.firstOrNull { it.name.equals(options.libraryName, true) }
+                    ?: throw FinSyncError.Problem("There is no music library called \"${options.libraryName}\". Choices: ${libs.joinToString { it.name }}.")
+                if (manifest.libraryId.isNotEmpty() && manifest.libraryId != lib.id) throw FinSyncError.WrongTarget("library")
+                listOf(lib)
+            }
+            ids != null -> libs.filter { it.id in ids }.ifEmpty {
+                throw FinSyncError.Problem("None of the music libraries chosen to sync is on the server any more. Choose again under What to sync.")
+            }
+            options.allLibraries || libs.size == 1 -> libs
+            else -> manifest.libraryId.split(',').let { had -> libs.filter { it.id in had } }.ifEmpty {
+                throw FinSyncError.Problem("The server has several music libraries (${libs.joinToString { it.name }}). Choose one with --library.")
+            }
+        }
+    }
+
+    /**
+     * Every music library the account can see and its albums, for choosing what to sync. Reads the
+     * server only.
+     */
+    suspend fun catalog(): Catalog {
+        val user = client.currentUser()
+        val libs = client.musicLibraries(user.id)
+        val size = HashMap<String, Long>()
+        val albums = libs.flatMap { lib ->
+            client.tracks(user.id, lib.id).onEach { size[it.id] = it.size }.groupBy { Selection.albumKey(it) }.map { (key, ts) ->
+                val t = ts.first()
+                CatalogAlbum(key, t.album?.takeIf { it.isNotBlank() } ?: "Unknown album", Selection.artistOf(t), lib.id, ts.mapTo(HashSet()) { it.id }, ts.sumOf { it.size })
+            }
+        }
+        val playlists = client.playlists(user.id).map { p ->
+            val ids = p.trackIds.filter { it in size }.toSet()
+            CatalogPlaylist(p.id, p.name, ids, ids.sumOf { size.getValue(it) })
+        }
+        return Catalog(libs, albums, playlists, size)
+    }
+
+    private suspend fun withReuse(plan: SyncPlan, tracks: List<RemoteTrack>, inPlaylists: Set<String>, root: Path, say: SyncListener): SyncPlan {
         val listed = wallClockMillis()
         say.log("Card check: listing the card folder")
         val files = cardFiles(root)
@@ -149,6 +187,9 @@ class SyncEngine(
             fileStarted = now
         })
         say.log("Card check finished in ${secs(wallClockMillis() - started)}: ${report.reuses.size} to reuse, ${report.leftovers.size} spare copies, ${report.notInLibrary.size} not in the library")
+        // Card copies of music the user chose not to sync are neither reused nor offered for removal: left alone.
+        val excluded = tracks.filter { Selection.isExcluded(it, options.plan, inPlaylists) }.mapTo(HashSet()) { it.id }
+        val card = if (excluded.isEmpty()) report else report.copy(leftovers = report.leftovers.filter { it.trackId !in excluded })
         val reused = report.reuses.map { it.track.id }.toSet()
         val downloads = plan.downloads.filter { it.track.id !in reused || it.replace }
         val reuseBytes = report.reuses.sumOf { it.track.size }
@@ -160,7 +201,7 @@ class SyncEngine(
             reuse = Tally(report.reuses.size, reuseBytes),
             bytesNeeded = (t.bytesNeeded - reuseBytes + headroom).coerceAtLeast(0),
         )
-        return plan.copy(downloads = downloads, totals = totals, card = report)
+        return plan.copy(downloads = downloads, totals = totals, card = card)
     }
 
     /** Audio files under [root], except FinSync's own folder and system/hidden folders. */
@@ -530,6 +571,21 @@ data class CardReportFile(
     /** Card copies of library tracks whose audio is damaged: left where they are, fresh copies downloaded. */
     val damaged: List<CardFile> = emptyList(),
 )
+
+/** What the account can sync: its music libraries, their albums and the playlists ([catalog]). */
+data class Catalog(
+    val libraries: List<Library>, val albums: List<CatalogAlbum>, val playlists: List<CatalogPlaylist> = emptyList(),
+    /** Each track's size, by id. */
+    val trackBytes: Map<String, Long> = emptyMap(),
+)
+
+/** A playlist and the ids of its tracks that are in a music library, with their total size. */
+data class CatalogPlaylist(val id: String, val name: String, val trackIds: Set<String>, val bytes: Long)
+
+/** One album in a library. [key] is [Selection.albumKey]; [artist] is [Selection.artistOf]. */
+data class CatalogAlbum(val key: String, val name: String, val artist: String, val libraryId: String, val trackIds: Set<String>, val bytes: Long) {
+    val tracks get() = trackIds.size
+}
 
 private val CARD_JSON = Json { prettyPrint = true; ignoreUnknownKeys = true }
 

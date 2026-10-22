@@ -80,12 +80,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { SERVER, FOLDER, CHECK, HOME, SPARES, NOT_IN_LIBRARY }
+private enum class Screen { SERVER, FOLDER, CHECK, HOME, SPARES, NOT_IN_LIBRARY, CHOOSE }
 
 @Composable
 private fun App() {
     val ctx = LocalContext.current
     val s = remember { Settings(ctx) }
+    var chooseFrom by rememberSaveable { mutableStateOf(Screen.HOME) }
     var screen by rememberSaveable {
         mutableStateOf(when { !s.signedIn -> Screen.SERVER; s.treeUri == null -> Screen.FOLDER; !s.setupDone -> Screen.CHECK; else -> Screen.HOME })
     }
@@ -93,17 +94,19 @@ private fun App() {
         when (screen) {
             Screen.SERVER -> ServerScreen(s) { screen = Screen.FOLDER }
             Screen.FOLDER -> FolderScreen(s) { screen = if (s.setupDone) Screen.HOME else Screen.CHECK }
-            Screen.CHECK -> CheckScreen(s) { screen = Screen.HOME }
-            Screen.HOME -> HomeScreen(s, go = { screen = it })
+            Screen.CHECK -> CheckScreen(s, choose = { chooseFrom = Screen.CHECK; screen = Screen.CHOOSE }) { screen = Screen.HOME }
+            Screen.HOME -> HomeScreen(s, go = { if (it == Screen.CHOOSE) chooseFrom = Screen.HOME; screen = it })
+            // After a change, the check screen shows what the new choice means before anything is removed.
+            Screen.CHOOSE -> WhatToSyncScreen(s, back = { screen = chooseFrom }) { screen = Screen.CHECK }
             Screen.SPARES -> SparesScreen { screen = Screen.HOME }
             Screen.NOT_IN_LIBRARY -> NotInLibraryScreen { screen = Screen.HOME }
         }
     }
 }
 
-@Composable private fun Title(text: String) = Text(text, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
-@Composable private fun Body(text: String) = Text(text, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
-@Composable private fun ErrorText(text: String?) { if (text != null) Text(text, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
+@Composable internal fun Title(text: String) = Text(text, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
+@Composable internal fun Body(text: String) = Text(text, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+@Composable internal fun ErrorText(text: String?) { if (text != null) Text(text, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
 
 // --- 1. Server and sign-in ---------------------------------------------------------------------
 
@@ -156,6 +159,7 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
                         client.serverInfo()
                         val session = if (usePassword) client.signInWithPassword(user.trim(), password)
                         else client.signInWithQuickConnect(10 * 60_000L) { code = it }
+                        if (s.server != base) s.clearSelection()
                         s.demo = false; s.usedRealServer = true
                         s.server = base; s.token = session.token; s.userName = session.userName
                         SyncRunner.forgetPlan()
@@ -173,6 +177,7 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
             else TextButton(onClick = { usePassword = !usePassword }) { Text(if (usePassword) "Use Quick Connect" else "Use a password instead") }
         }
         if (!s.usedRealServer && !busy) TextButton(onClick = {
+            s.clearSelection()
             s.demo = true; s.server = DemoServer.URL; s.token = DemoServer.TOKEN; s.userName = "Sample"
             done()
         }, modifier = Modifier.padding(top = 4.dp)) { Text("No server yet? Try it with sample music", fontSize = 14.sp) }
@@ -231,7 +236,7 @@ private fun FolderScreen(s: Settings, done: () -> Unit) {
 // --- 3. Check and go ---------------------------------------------------------------------------
 
 @Composable
-private fun CheckScreen(s: Settings, done: () -> Unit) {
+private fun CheckScreen(s: Settings, choose: () -> Unit, done: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val status by SyncRunner.status.collectAsState()
@@ -265,6 +270,12 @@ private fun CheckScreen(s: Settings, done: () -> Unit) {
             return@Column
         }
         PlanSummary(p, free, s.folderName)
+        Text("What to sync: ${selectionSummary(s)}", fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+        OutlinedButton(onClick = choose, modifier = Modifier.padding(top = 4.dp)) { Text("Choose what to sync") }
+        if (!p.executable) {
+            Body("If you've just changed what to sync, this is expected: those tracks are removed from the “${s.folderName}” folder (nothing outside it is touched).")
+            OutlinedButton(onClick = { plan = SyncRunner.allowRemovals(p) }) { Text("Yes, remove ${count(p.totals.delete.files, "file")}") }
+        }
         Button(enabled = p.executable, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(56.dp), onClick = {
             if (Build.VERSION.SDK_INT >= 33) notify.launch(Manifest.permission.POST_NOTIFICATIONS) else start(ctx, s, done)
         }) { Text("Sync", fontSize = 20.sp) }
@@ -285,12 +296,12 @@ private fun PlanSummary(p: SyncPlan, free: Long?, folder: String) {
     if (t.reuse.files > 0) Body("Already on the card: ${count(t.reuse.files, "track")} (${bytes(t.reuse.bytes)}) will be moved into the “${Settings.FOLDER}” folder. No need to download them.")
     Body(if (t.download.files == 0) "Nothing needs downloading." else "To download: ${count(t.download.files, "track")}, ${bytes(t.download.bytes)}.")
     if (t.adopt.files > 0) Body("${count(t.adopt.files, "track")} ${pick(t.adopt.files, "is", "are")} already in place.")
-    if (t.delete.files > 0) Body("${count(t.delete.files, "old track")} ${pick(t.delete.files, "is", "are")} no longer in the library and will be removed from the “$folder” folder.")
+    if (t.delete.files > 0) Body("${count(t.delete.files, "file")} in the “$folder” folder ${pick(t.delete.files, "is", "are")} no longer in the library or no longer chosen, and will be removed.")
     if (t.art.files + t.lyrics.files + t.playlists.files > 0) Body("Also: ${count(t.art.files, "album cover")}, ${count(t.lyrics.files, "lyrics file")}, ${count(t.playlists.files, "playlist")}.")
     if (p.card.leftovers.isNotEmpty()) Body("On the card: ${count(p.card.leftovers.size, "extra copy", "extra copies")} of library tracks. After the sync you can review and remove ${pick(p.card.leftovers.size, "it", "them")}.")
     if (p.card.notInLibrary.isNotEmpty()) Body("${count(p.card.notInLibrary.size, "music file")} on the card ${pick(p.card.notInLibrary.size, "isn't", "aren't")} in your library. ${pick(p.card.notInLibrary.size, "It is", "They are")} left alone.")
     if (free != null) Body(if (free >= t.bytesNeeded) "The card has ${bytes(free)} free. Everything fits." else "The card has ${bytes(free)} free but this needs about ${bytes(t.bytesNeeded)}.")
-    if (p.brakeTripped) ErrorText("Stopped to be safe: ${p.brakeReason}. Check that the server shows your whole library.")
+    if (p.brakeTripped && !p.executable) ErrorText("Stopped to be safe: ${p.brakeReason}. If you didn't change what to sync, check that the server shows your whole library.")
 }
 
 // --- Home --------------------------------------------------------------------------------------
@@ -325,6 +336,10 @@ private fun HomeScreen(s: Settings, go: (Screen) -> Unit) {
         if (!s.demo) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Sync automatically on Wi-Fi while charging", modifier = Modifier.weight(1f))
             Switch(auto, { auto = it; s.autoSync = it; SyncWorker.schedule(ctx, it) })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Text("What to sync: ${selectionSummary(s)}", modifier = Modifier.weight(1f))
+            OutlinedButton(enabled = !status.running, onClick = { go(Screen.CHOOSE) }) { Text("Change") }
         }
         card?.let { c ->
             if (c.leftovers.isNotEmpty()) Notice(
@@ -384,7 +399,7 @@ internal fun Notice(text: String, action: String?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Progress(st: Status) {
+internal fun Progress(st: Status) {
     // Until something is counted, a moving bar: an empty one at "0 of 7114" looks stuck.
     if (st.total > 0 && st.done > 0) LinearProgressIndicator(progress = { st.done.toFloat() / st.total }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
     else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
@@ -441,7 +456,7 @@ private fun NotInLibraryScreen(back: () -> Unit) {
     }
 }
 
-private fun bytes(n: Long): String = when {
+internal fun bytes(n: Long): String = when {
     n >= 1_000_000_000 -> "%.1f GB".format(n / 1e9)
     n >= 1_000_000 -> "%.0f MB".format(n / 1e6)
     else -> "%.0f KB".format(n / 1e3)

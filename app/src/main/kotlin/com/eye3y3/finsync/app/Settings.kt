@@ -1,6 +1,8 @@
 package com.eye3y3.finsync.app
 
 import android.content.Context
+import com.eye3y3.finsync.plan.Pick
+import com.eye3y3.finsync.plan.PlanOptions
 import java.util.UUID
 
 /** What FinSync remembers: the server and sign-in, the card folder, and the last sync. Private to the app. */
@@ -21,6 +23,32 @@ class Settings(context: Context) {
     var demo: Boolean get() = p.getBoolean("demo", false); set(v) = p.edit().putBoolean("demo", v).apply()
     /** Once signed in to a real server, the sample library is never offered again. */
     var usedRealServer: Boolean get() = p.getBoolean("usedRealServer", false); set(v) = p.edit().putBoolean("usedRealServer", v).apply()
+
+    // What to sync. Artist names are kept lower-case (the engine ignores case); albums by their key.
+    /** False: the whole library less what is excluded. True: only what is picked. */
+    var pickOnly: Boolean get() = p.getBoolean("pickOnly", false); set(v) = p.edit().putBoolean("pickOnly", v).apply()
+    /** The music libraries to sync; null: all of them. */
+    var libraryIds: Set<String>? get() = set("libraryIds"); set(v) = putSet("libraryIds", v)
+    var excludedArtists: Set<String> get() = set("excludedArtists").orEmpty(); set(v) = putSet("excludedArtists", v)
+    var excludedAlbums: Set<String> get() = set("excludedAlbums").orEmpty(); set(v) = putSet("excludedAlbums", v)
+    var pickArtists: Set<String> get() = set("pickArtists").orEmpty(); set(v) = putSet("pickArtists", v)
+    var pickAlbums: Set<String> get() = set("pickAlbums").orEmpty(); set(v) = putSet("pickAlbums", v)
+    var pickPlaylists: Set<String> get() = set("pickPlaylists").orEmpty(); set(v) = putSet("pickPlaylists", v)
+
+    /** The engine's options for the choices above. */
+    fun planOptions(): PlanOptions = when {
+        pickOnly -> PlanOptions(pick = Pick(pickArtists, pickAlbums, pickPlaylists))
+        else -> PlanOptions(excludedArtists = excludedArtists, excludedAlbums = excludedAlbums)
+    }
+
+    /** Forgets what to sync (another server's ids mean nothing). */
+    fun clearSelection() {
+        p.edit().remove("pickOnly").remove("libraryIds").remove("excludedArtists").remove("excludedAlbums")
+            .remove("pickArtists").remove("pickAlbums").remove("pickPlaylists").apply()
+    }
+
+    private fun set(key: String): Set<String>? = p.getStringSet(key, null)?.toSet()
+    private fun putSet(key: String, v: Set<String>?) = p.edit().apply { if (v == null) remove(key) else putStringSet(key, v) }.apply()
 
     /** FinSync's own folder inside the granted one (the samples get a folder of their own). */
     val folderName get() = if (demo) DEMO_FOLDER else FOLDER

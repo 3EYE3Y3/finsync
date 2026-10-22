@@ -25,7 +25,8 @@ object MirrorPlanner {
     ): SyncPlan {
         val mirror = MirrorPathBuilder.build(tracks, options.root, options.libraryFolders)
         val pathOf = mirror.paths
-        val selected = select(tracks, options).sortedBy { pathOf.getValue(it.id).lowercase() }
+        val lists = options.pick?.let { p -> playlists.filter { it.id in p.playlists } } ?: playlists
+        val selected = select(tracks, options, Selection.picked(options, playlists)).sortedBy { pathOf.getValue(it.id).lowercase() }
         val selectedIds = selected.mapTo(HashSet()) { it.id }
 
         val diskLower = disk.mapKeys { it.key.lowercase() }
@@ -77,10 +78,10 @@ object MirrorPlanner {
 
         // Playlists only list tracks that will be in the mirror.
         val mirrored = usable.associateBy { it.id }
-        val listPaths = Naming.resolveClashes(playlists.map { it.id to Playlists.fileName(it) })
+        val listPaths = Naming.resolveClashes(lists.map { it.id to Playlists.fileName(it) })
         val wantedLists = LinkedHashMap<String, String>()
         val writes = ArrayList<WritePlaylist>()
-        for (pl in playlists) {
+        for (pl in lists) {
             val content = Playlists.render(pl, mirrored, pathOf) ?: continue
             val path = listPaths.getValue(pl.id)
             wantedLists[path] = pl.id
@@ -141,9 +142,10 @@ object MirrorPlanner {
         }
     }
 
-    private fun select(tracks: List<RemoteTrack>, o: PlanOptions): List<RemoteTrack> {
+    private fun select(tracks: List<RemoteTrack>, o: PlanOptions, inPlaylists: Set<String>): List<RemoteTrack> {
         // A track without a believable size can't be checked once downloaded (and would upset the space check).
         var list = tracks.filter { it.size in 1..MAX_TRACK_BYTES }
+        if (o.pick != null || o.excludedArtists.isNotEmpty() || o.excludedAlbums.isNotEmpty()) list = list.filter { !Selection.isExcluded(it, o, inPlaylists) }
         if (o.artists.isNotEmpty()) {
             val names = o.artists.mapTo(HashSet()) { it.lowercase() }
             list = list.filter { t -> (listOfNotNull(t.albumArtist) + t.artists).any { it.lowercase() in names } }

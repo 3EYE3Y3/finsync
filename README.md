@@ -28,6 +28,8 @@ The Play version and the GitHub APK are signed with different keys, so one can't
 2. **Choose a folder:** pick the SD card (or a folder on it). FinSync keeps its copy in a `Jellyfin` folder inside.
 3. **Check and sync:** FinSync shows what it will download, reuse and remove before anything happens.
 
+**Choose what to sync:** the whole library (untick artists, albums or whole libraries you don't want), or only what you pick (artists, albums and playlists). Music you untick is removed from FinSync's folder at the next sync, after asking if it's a lot; nothing outside that folder is touched.
+
 **No server yet?** Tap *No server yet? Try it with sample music* on the first screen. FinSync then syncs a small built-in sample library (CC0, [docs/DEMO-ASSETS.md](docs/DEMO-ASSETS.md)) into its own folder; *Use my own server* removes it again.
 
 ## Feedback and help

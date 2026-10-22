@@ -1,6 +1,7 @@
 package com.eye3y3.finsync.plan
 
 import com.eye3y3.finsync.manifest.ManifestEntry
+import com.eye3y3.finsync.model.RemotePlaylist
 import com.eye3y3.finsync.model.RemoteTrack
 import com.eye3y3.finsync.reuse.CardReport
 
@@ -16,7 +17,43 @@ data class PlanOptions(
     val maxBytes: Long? = null,
     /** Only these artists (album artist or track artist, ignoring case). */
     val artists: List<String> = emptyList(),
+    /** Artists not to sync, as [Selection.artistOf] names them (ignoring case). New albums by them are left out too. */
+    val excludedArtists: Set<String> = emptySet(),
+    /** Albums not to sync, by [Selection.albumKey]. */
+    val excludedAlbums: Set<String> = emptySet(),
+    /** Sync only what this picks (and write only its playlists). Null: the whole library, less what is excluded above. */
+    val pick: Pick? = null,
 )
+
+/**
+ * "Only what I choose": tracks by these artists (as [Selection.artistOf] names them, ignoring case), on
+ * these albums ([Selection.albumKey]) or in these playlists (by id). New albums by a picked artist are
+ * picked too. Only the picked playlists are written.
+ */
+data class Pick(val artists: Set<String> = emptySet(), val albums: Set<String> = emptySet(), val playlists: Set<String> = emptySet())
+
+/** How tracks are grouped when choosing what to sync: by album artist, then album. */
+object Selection {
+    /** The artist a track is listed under: its album artist, else its first artist. */
+    fun artistOf(t: RemoteTrack): String = t.albumArtist?.takeIf { it.isNotBlank() } ?: t.artists.firstOrNull { it.isNotBlank() } ?: UNKNOWN_ARTIST
+
+    /** The album's server id, or artist and album name for tracks without one. */
+    fun albumKey(t: RemoteTrack): String = t.albumId ?: "${artistOf(t)}/${t.album.orEmpty()}"
+
+    /** True when [t] is left out by the excluded artists and albums, or isn't in [inPlaylists] / [Pick]. */
+    fun isExcluded(t: RemoteTrack, o: PlanOptions, inPlaylists: Set<String> = emptySet()): Boolean {
+        val pick = o.pick ?: return albumKey(t) in o.excludedAlbums || o.excludedArtists.any { it.equals(artistOf(t), ignoreCase = true) }
+        return !(t.id in inPlaylists || albumKey(t) in pick.albums || pick.artists.any { it.equals(artistOf(t), ignoreCase = true) })
+    }
+
+    /** Ids of the tracks in the picked playlists (empty without a [Pick]). */
+    fun picked(o: PlanOptions, playlists: List<RemotePlaylist>): Set<String> {
+        val ids = o.pick?.playlists ?: return emptySet()
+        return playlists.filter { it.id in ids }.flatMapTo(HashSet()) { it.trackIds }
+    }
+
+    const val UNKNOWN_ARTIST = "Unknown artist"
+}
 
 data class Download(val track: RemoteTrack, val path: String, val replace: Boolean)
 data class Adopt(val track: RemoteTrack, val path: String)

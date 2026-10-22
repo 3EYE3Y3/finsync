@@ -10,8 +10,8 @@ import com.eye3y3.finsync.createHttpClient
 import com.eye3y3.finsync.jellyfin.FinSyncError
 import com.eye3y3.finsync.jellyfin.JellyfinClient
 import com.eye3y3.finsync.jellyfin.ServerConfig
-import com.eye3y3.finsync.plan.PlanOptions
 import com.eye3y3.finsync.plan.SyncPlan
+import com.eye3y3.finsync.sync.Catalog
 import com.eye3y3.finsync.sync.CardReportFile
 import com.eye3y3.finsync.sync.SyncEngine
 import com.eye3y3.finsync.app.demo.DemoServer
@@ -87,7 +87,8 @@ object SyncRunner {
             val engine = SyncEngine(
                 client, SafFileSystem(tree), "/${s.folderName}".toPath(),
                 // The samples never touch other music on the card.
-                SyncOptions(PlanOptions(), concurrency = 2, reuseFrom = if (s.demo) null else "/".toPath()),
+                SyncOptions(s.planOptions(), concurrency = 2, libraryIds = s.libraryIds, allLibraries = true,
+                    reuseFrom = if (s.demo) null else "/".toPath()),
                 freeSpace = { tree.freeBytes() },
             )
             block(engine, s)
@@ -128,6 +129,11 @@ object SyncRunner {
         }()
     }
 
+    /** The libraries, albums and playlists the account can sync, for the What to sync screen. Changes nothing. */
+    suspend fun catalog(context: Context): Catalog? = exclusive("Loading your library") {
+        withEngine(context) { engine, _ -> engine.catalog() }()
+    }
+
     /** Ends a sign-in on the server in the background; failures (offline, server gone) are ignored. */
     @OptIn(DelicateCoroutinesApi::class)
     fun signOut(context: Context, server: String, token: String) {
@@ -146,6 +152,9 @@ object SyncRunner {
 
     /** The check screen's plan is out of date (the folder, server or what to sync changed). */
     fun forgetPlan() { lastPlan = null }
+
+    /** The user agreed to the removals that tripped the deletion brake: the next sync may carry them out. */
+    fun allowRemovals(plan: SyncPlan): SyncPlan = plan.copy(allowLargeDelete = true).also { lastPlan = System.currentTimeMillis() to it }
 
     /** A full sync. Uses the plan from the check screen when it's less than half an hour old. */
     suspend fun sync(context: Context): Boolean? = exclusive("Syncing") {
@@ -197,7 +206,7 @@ object SyncRunner {
             }
             Unit
         }
-        s.demo = false; s.server = null; s.token = null; s.userName = null
+        s.demo = false; s.server = null; s.token = null; s.userName = null; s.clearSelection()
         s.treeUri = null; s.treeName = null; s.setupDone = false
         s.lastSyncAt = 0L; s.lastSummary = null
         lastPlan = null

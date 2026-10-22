@@ -12,10 +12,13 @@ import io.ktor.http.headersOf
 class MockTrack(
     val id: String, val path: String, val albumId: String, val data: ByteArray, val etag: String = "e1", val lyrics: Boolean = false,
     val art: Boolean = false, val artist: String = "Art", val container: String = "flac", val runTimeTicks: Long = 10_000_000,
+    val library: String = "lib1", val album: String = "Alb",
 )
 
 /** A tiny in-memory Jellyfin behind a Ktor MockEngine, for engine tests on a fake file system. */
 class MockJellyfin(var tracks: List<MockTrack> = emptyList(), var playlists: Map<String, List<String>> = emptyMap()) {
+    /** Music libraries as (id, name). */
+    var libraries = listOf("lib1" to "Music")
     var downloadCalls = 0
     /** The Range header of every download request (null: the whole file), with the track id. */
     val downloadRanges = ArrayList<Pair<String, String?>>()
@@ -31,11 +34,11 @@ class MockJellyfin(var tracks: List<MockTrack> = emptyList(), var playlists: Map
                 when {
                     path == "/System/Info/Public" -> respond("""{"Id":"srv1","ServerName":"Mock","Version":"10.11"}""", headers = json)
                     path == "/Users/Me" -> respond("""{"Id":"u1","Name":"alex","Policy":{"EnableContentDownloading":true,"IsAdministrator":false}}""", headers = json)
-                    path == "/UserViews" -> respond("""{"Items":[{"Id":"lib1","Name":"Music","CollectionType":"music"}]}""", headers = json)
+                    path == "/UserViews" -> respond("""{"Items":[${libraries.joinToString(",") { (id, name) -> """{"Id":"$id","Name":"$name","CollectionType":"music"}""" }}]}""", headers = json)
                     path == "/Library/VirtualFolders" -> respond("", HttpStatusCode.Forbidden)
                     path == "/Items" && req.url.parameters["IncludeItemTypes"] == "Playlist" ->
                         respond("""{"Items":[${playlists.keys.joinToString(",") { """{"Id":"pl-$it","Name":"$it"}""" }}]}""", headers = json)
-                    path == "/Items" -> respond(itemsJson(), headers = json)
+                    path == "/Items" -> respond(itemsJson(req.url.parameters["ParentId"]), headers = json)
                     path.startsWith("/Playlists/") -> {
                         val name = path.removePrefix("/Playlists/pl-").removeSuffix("/Items")
                         respond("""{"Items":[${playlists[name].orEmpty().joinToString(",") { """{"Id":"$it"}""" }}]}""", headers = json)
@@ -58,12 +61,13 @@ class MockJellyfin(var tracks: List<MockTrack> = emptyList(), var playlists: Map
         "tok",
     )
 
-    private fun itemsJson(): String {
-        val items = tracks.joinToString(",") { t ->
-            """{"Id":"${t.id}","Name":"${t.id}","Album":"Alb","AlbumId":"${t.albumId}","AlbumArtist":"${t.artist}","Artists":["${t.artist}"],"Path":"/lib/${t.path}",
+    private fun itemsJson(library: String?): String {
+        val shown = tracks.filter { library == null || it.library == library }
+        val items = shown.joinToString(",") { t ->
+            """{"Id":"${t.id}","Name":"${t.id}","Album":"${t.album}","AlbumId":"${t.albumId}","AlbumArtist":"${t.artist}","Artists":["${t.artist}"],"Path":"/lib/${t.path}",
             "Etag":"${t.etag}","HasLyrics":${t.lyrics},${if (t.art) "\"AlbumPrimaryImageTag\":\"p\"," else ""}"RunTimeTicks":${t.runTimeTicks},"MediaSources":[{"Size":${t.data.size},"Container":"${t.container}"}]}"""
         }
-        return """{"Items":[$items],"TotalRecordCount":${tracks.size}}"""
+        return """{"Items":[$items],"TotalRecordCount":${shown.size}}"""
     }
 }
 
