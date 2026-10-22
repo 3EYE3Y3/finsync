@@ -103,10 +103,13 @@ object Naming {
     fun resolveClashes(items: List<Pair<String, String>>): Map<String, String> {
         val taken = HashSet<String>()
         val out = LinkedHashMap<String, String>()
+        // The next number to try for each name: many tracks with one name don't each retry from (2).
+        val next = HashMap<String, Int>()
         for ((id, path) in items.sortedBy { it.first }) {
             var candidate = path
-            var n = 2
+            var n = next[path.lowercase()] ?: 2
             while (!taken.add(candidate.lowercase())) candidate = withSuffix(path, " ($n)").also { n++ }
+            next[path.lowercase()] = n
             out[id] = candidate
         }
         return out

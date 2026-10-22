@@ -7,6 +7,12 @@ import kotlin.test.assertTrue
 class NamingTest {
     private fun safe(s: String) = Naming.safeComponent(s)
 
+    @Test fun manyTracksWithOneNameGetNumberedQuickly() {
+        val out = Naming.resolveClashes((1..20_000).map { "id$it" to "A/B/Track.flac" })
+        assertEquals(20_000, out.values.map { it.lowercase() }.toSet().size)
+        assertEquals("A/B/Track.flac", out["id1"])
+    }
+
     @Test fun slashesAndBackslashesBecomeUnderscores() {
         assertEquals("AC_DC", safe("AC/DC"))
         assertEquals("a_b", safe("a\\b"))

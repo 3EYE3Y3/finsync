@@ -1,5 +1,7 @@
 package com.eye3y3.finsync.reuse
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import com.eye3y3.finsync.download.AudioSignature
 
 /**
@@ -26,12 +28,20 @@ data class AudioLayout(
 }
 
 object AudioLayouts {
+    private const val MAX_TAGS = 16
+    private const val MAX_FLAC_BLOCKS = 1024
+    private const val MAX_HEADER_BYTES = 64L shl 20
+
     /** Reads [r]'s layout, or null if it isn't recognisable audio. */
     suspend fun read(r: ByteReader): AudioLayout? {
         val size = r.size
         if (size < 16) return null
         var off = 0L
+        var tags = 0
         while (true) { // ID3v2 tags (there may be more than one) before FLAC or MP3 audio
+            // A crafted file could chain endless empty tags: real files have one or two.
+            if (++tags > MAX_TAGS) return null
+            currentCoroutineContext().ensureActive()
             val h = r.read(off, 10)
             if (h.size < 10 || !h.startsWith("ID3")) break
             off += 10 + syncsafe(h, 6) + if ((h[5].toInt() and 0x10) != 0) 10 else 0
@@ -51,7 +61,11 @@ object AudioLayouts {
         var md5: String? = null
         var samples: Long? = null
         var rate = 0
+        var blocks = 0
         while (true) {
+            // Real FLAC files have a handful of metadata blocks; a crafted one could have millions of empty ones.
+            if (++blocks > MAX_FLAC_BLOCKS || p - start > MAX_HEADER_BYTES) return null
+            currentCoroutineContext().ensureActive()
             val h = r.read(p, 4)
             if (h.size < 4) return null
             val last = (h[0].toInt() and 0x80) != 0

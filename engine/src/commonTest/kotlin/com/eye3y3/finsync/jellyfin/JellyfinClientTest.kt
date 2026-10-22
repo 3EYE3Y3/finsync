@@ -32,6 +32,18 @@ class JellyfinClientTest {
         assertEquals("MediaBrowser Client=\"FinSync\", Device=\"Test Box\", DeviceId=\"dev-1\", Version=\"0.1.0\", Token=\"abc\"", seen)
     }
 
+    @Test fun aHugeReplyIsRefusedNotLoaded() = runTest {
+        val c = client("abc") { respond(ByteArray((64 shl 20) + 10) { ' '.code.toByte() }, headers = json) }
+        assertFailsWith<FinSyncError.Problem> { c.serverInfo() }
+    }
+
+    @Test fun serverIdsStayOnePathSegment() = runTest {
+        var path = ""
+        val c = client("abc") { path = it.url.encodedPath; respond("""{"Lyrics":[]}""", headers = json) }
+        c.lyrics("../Users/x?y=1")
+        assertTrue(path.startsWith("/Audio/") && path.endsWith("/Lyrics") && path.count { it == '/' } == 3, path)
+    }
+
     @Test fun noTokenBeforeSignIn() {
         assertTrue(!client { respond("") }.authorization().contains("Token"))
     }

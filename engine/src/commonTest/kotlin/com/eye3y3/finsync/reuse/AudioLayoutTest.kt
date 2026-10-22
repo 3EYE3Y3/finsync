@@ -65,6 +65,16 @@ class AudioLayoutTest {
         assertEquals(f.size.toLong(), l.payloadEnd)
     }
 
+    @Test fun craftedHeadersCantMakeTheReaderLoopForever() = runTest {
+        // Thousands of empty ID3 tags in a row, then FLAC: given up on, not read for ever.
+        val emptyTag = byteArrayOf('I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(), 4, 0, 0, 0, 0, 0, 0)
+        val tags = ByteArray(0).let { var b = it; repeat(5000) { b += emptyTag }; b }
+        assertNull(AudioLayouts.read(BytesReader(tags + AudioFixtures.flac(AudioFixtures.flacFrames(1000, 1), "T=x"))))
+        // A FLAC file with thousands of empty metadata blocks.
+        val blocks = ByteArray(4 * 5000).also { for (i in 0 until 5000) it[i * 4] = 1 }
+        assertNull(AudioLayouts.read(BytesReader("fLaC".encodeToByteArray() + blocks + ByteArray(64))))
+    }
+
     @Test fun nonAudioIsNull() = runTest {
         assertNull(AudioLayouts.read(BytesReader(ByteArray(500) { 7 })))
         assertNull(AudioLayouts.read(BytesReader(ByteArray(3))))

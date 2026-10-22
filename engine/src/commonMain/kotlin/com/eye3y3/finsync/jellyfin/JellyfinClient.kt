@@ -11,9 +11,8 @@ import io.ktor.client.request.prepareGet
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.bodyAsText
+import io.ktor.http.encodeURLPathPart
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -60,10 +59,10 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
     }
 
     suspend fun quickConnectEnabled(): Boolean =
-        send(HttpMethod.Get, "/QuickConnect/Enabled").bodyAsText().trim().equals("true", ignoreCase = true)
+        send(HttpMethod.Get, "/QuickConnect/Enabled").text().trim().equals("true", ignoreCase = true)
 
     suspend fun quickConnectInitiate(): QuickConnectCode {
-        val o = json.parseToJsonElement(send(HttpMethod.Post, "/QuickConnect/Initiate").bodyAsText()).obj()
+        val o = json.parseToJsonElement(send(HttpMethod.Post, "/QuickConnect/Initiate").text()).obj()
         return QuickConnectCode(o.str("Secret") ?: throw FinSyncError.QuickConnectOff(), o.str("Code") ?: "")
     }
 
@@ -152,22 +151,23 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
         val lists = getJson("/Items") {
             parameter("userId", userId); parameter("IncludeItemTypes", "Playlist"); parameter("Recursive", "true")
         }.obj().arr("Items").map { it.obj() }
+        if (lists.size > MAX_PLAYLISTS) throw FinSyncError.Problem("The server lists more than $MAX_PLAYLISTS playlists, which looks like a mistake.")
         return lists.map { p ->
             val id = p.str("Id") ?: ""
-            val entries = getJson("/Playlists/$id/Items") { parameter("userId", userId) }.obj().arr("Items")
+            val entries = getJson("/Playlists/${seg(id)}/Items") { parameter("userId", userId) }.obj().arr("Items")
             RemotePlaylist(id, p.str("Name") ?: "Playlist", entries.mapNotNull { it.obj().str("Id") })
         }
     }
 
     /** The album's cover picture as JPEG bytes, or null if the server has none. */
     suspend fun albumArt(albumId: String): ByteArray? = try {
-        send(HttpMethod.Get, "/Items/$albumId/Images/Primary") { parameter("format", "Jpg") }.bodyAsBytes()
+        send(HttpMethod.Get, "/Items/${seg(albumId)}/Images/Primary") { parameter("format", "Jpg") }.bytes(MAX_IMAGE_BYTES)
     } catch (e: FinSyncError.NotFound) {
         null
     }
 
     suspend fun lyrics(itemId: String): List<LyricLine>? = try {
-        getJson("/Audio/$itemId/Lyrics").obj().arr("Lyrics").map { it.obj() }
+        getJson("/Audio/${seg(itemId)}/Lyrics").obj().arr("Lyrics").map { it.obj() }
             .map { LyricLine(it.str("Text") ?: "", it.long("Start")) }
     } catch (e: FinSyncError.NotFound) {
         null
@@ -178,7 +178,7 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
      * (206 when the server honoured the range), the declared length of this response and the body.
      */
     suspend fun <T> download(itemId: String, from: Long = 0, block: suspend (status: Int, length: Long?, body: ByteReadChannel) -> T): T {
-        val statement = http.prepareGet("$base/Items/$itemId/Download") {
+        val statement = http.prepareGet("$base/Items/${seg(itemId)}/Download") {
             applyAuth()
             if (from > 0) header(HttpHeaders.Range, "bytes=$from-")
         }
@@ -202,7 +202,7 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
      */
     suspend fun readRange(itemId: String, offset: Long, length: Int): ByteArray {
         if (length <= 0) return ByteArray(0)
-        val statement = http.prepareGet("$base/Items/$itemId/Download") {
+        val statement = http.prepareGet("$base/Items/${seg(itemId)}/Download") {
             applyAuth()
             header(HttpHeaders.Range, "bytes=$offset-${offset + length - 1}")
         }
@@ -227,7 +227,7 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
 
     private suspend fun signedIn(path: String, body: JsonObject): Session {
         val o = json.parseToJsonElement(
-            send(HttpMethod.Post, path) { contentType(ContentType.Application.Json); setBody(body.toString()) }.bodyAsText(),
+            send(HttpMethod.Post, path) { contentType(ContentType.Application.Json); setBody(body.toString()) }.text(),
         ).obj()
         val token = o.str("AccessToken") ?: throw FinSyncError.SignInFailed()
         val user = o.objOrNull("User")
@@ -236,7 +236,28 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
     }
 
     private suspend fun getJson(path: String, extra: HttpRequestBuilder.() -> Unit = {}): JsonElement =
-        json.parseToJsonElement(send(HttpMethod.Get, path, extra).bodyAsText())
+        json.parseToJsonElement(send(HttpMethod.Get, path, extra).text())
+
+    /**
+     * The body, refusing anything over [limit] bytes: a misbehaving server could otherwise send
+     * gigabytes and run the app out of memory.
+     */
+    private suspend fun HttpResponse.bytes(limit: Long): ByteArray {
+        val b = try {
+            bodyAsChannel().readRemaining(limit + 1).readByteArray()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw FinSyncError.ServerUnreachable(base)
+        }
+        if (b.size > limit) throw FinSyncError.Problem("The server sent a reply that is far too large.")
+        return b
+    }
+
+    private suspend fun HttpResponse.text(): String = bytes(MAX_JSON_BYTES).decodeToString()
+
+    /** A server id as one URL path segment: it can't add path parts or a query to the request. */
+    private fun seg(id: String) = id.encodeURLPathPart()
 
     private suspend fun send(method: HttpMethod, path: String, extra: HttpRequestBuilder.() -> Unit = {}): HttpResponse {
         val resp = try {
@@ -292,7 +313,10 @@ class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var
 
     private companion object {
         const val PAGE_SIZE = 500
-        const val MAX_TRACKS = 2_000_000
+        const val MAX_TRACKS = 1_000_000
+        const val MAX_PLAYLISTS = 10_000
+        const val MAX_JSON_BYTES = 64L shl 20
+        const val MAX_IMAGE_BYTES = 32L shl 20
         val json = Json { ignoreUnknownKeys = true; isLenient = true }
     }
 }
