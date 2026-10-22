@@ -17,7 +17,7 @@ It was made for dedicated music players (Android-based DAPs such as HiBy or FiiO
 FinSync is in beta (Android 8.0 or newer).
 
 - **Google Play (beta):** join the [finsync-beta Google Group](https://groups.google.com/g/finsync-beta), then become a tester on [Google Play](https://play.google.com/apps/testing/com.eye3y3.finsync) and install it from there. Updates come through Play.
-- **APK:** download `finsync-<version>.apk` from the [latest release](https://github.com/3EYE3Y3/finsync/releases/latest). The app tells you when a newer release is out. Each release lists the APK's SHA-256 and signing certificate.
+- **APK:** download `finsync-<version>.apk` from the [latest release](https://github.com/3EYE3Y3/finsync/releases/latest). The app tells you when a newer release is out. Each release lists the APK's SHA-256. Every GitHub APK is signed with the same certificate, SHA-256 fingerprint `95:88:C0:9F:E2:B4:4C:DC:FF:CB:6E:94:D9:9A:13:3B:0A:13:A8:7E:D1:F4:4F:71:A9:FF:2D:78:CC:5D:A2:74`: check it with `apksigner verify --print-certs finsync-<version>.apk`, or let [Obtainium](https://obtainium.imranr.dev/) or [AppVerifier](https://github.com/soupslurpr/AppVerifier) do it.
 - **[Obtainium](https://obtainium.imranr.dev/):** add `https://github.com/3EYE3Y3/finsync` for automatic updates from GitHub Releases.
 
 The Play version and the GitHub APK are signed with different keys, so one can't update the other. To switch, uninstall first (your synced music stays on the card; you'll need to sign in and choose the folder again).
