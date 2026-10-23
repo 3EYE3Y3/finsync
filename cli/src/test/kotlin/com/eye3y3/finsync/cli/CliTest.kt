@@ -22,10 +22,11 @@ class CliTest {
                 assertTrue("does not encrypt" in text, text)
                 assertTrue("--allow-http" in text, text)
             }
-            Credentials("http://nas.local:8096", "d", "u", "t").save(creds)
-            val (code, text) = run("status", creds = creds)
-            assertEquals(EXIT_ERROR, code)
-            assertTrue("--allow-http" in text, text)
+            // A saved HTTP account keeps working (no network here: .invalid never resolves), with a reminder.
+            Credentials("http://saved.invalid:8096", "d", "u", "t").save(creds)
+            val (_, text) = run("status", creds = creds)
+            assertTrue("does not encrypt" in text, text)
+            assertTrue("--allow-http" !in text, text)
             assertTrue(Args.parse(listOf("login", "--server", "http://nas.local", "--allow-http")).flag("allow-http"))
         } finally {
             @OptIn(kotlin.io.path.ExperimentalPathApi::class) dir.deleteRecursively()

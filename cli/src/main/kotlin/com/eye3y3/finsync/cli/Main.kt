@@ -41,7 +41,7 @@ private val HELP = """
     moved into the mirror instead of downloaded; spare copies are only listed until remove-spares.
 
     Addresses without a scheme use HTTPS. For HTTP, explicitly use http://HOST:8096 and --allow-http.
-    --allow-http is required on each command using an HTTP server, including saved accounts.
+    Commands using a saved HTTP account print a reminder that HTTP is not encrypted.
 
     Exit codes: 0 ok, 1 error, 2 deletion brake stopped the sync, 3 not signed in.
 """.trimIndent()
@@ -162,7 +162,8 @@ class Cli(private val out: PrintStream = System.out, private val credentialsPath
             out.println("You are not signed in. Run: finsync login --server https://HOST:8920")
             return null
         }
-        checkTransport(normaliseServerUrl(c.server), args)
+        // Saved accounts keep working; the warning is a reminder, the explicit opt-in was at login.
+        if (isPlainHttp(c.server)) out.println(CLEARTEXT_WARNING)
         return JellyfinClient(http, ServerConfig(c.server, c.deviceId, "FinSync CLI on ${hostName()}"), c.token)
     }
 

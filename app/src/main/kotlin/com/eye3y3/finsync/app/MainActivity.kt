@@ -118,7 +118,6 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var url by rememberSaveable { mutableStateOf(s.server ?: "") }
-    var httpConfirmed by remember(url) { mutableStateOf(false) }
     var httpRetry by remember(url) { mutableStateOf<String?>(null) }
     var usePassword by rememberSaveable { mutableStateOf(false) }
     var user by rememberSaveable { mutableStateOf("") }
@@ -133,13 +132,7 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
         Body("Type the address of your Jellyfin server, as you would in a browser.")
         OutlinedTextField(url, { url = it }, enabled = !busy, label = { Text("Server address") }, placeholder = { Text("https://jellyfin.example.com") },
             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
-        if (isPlainHttp(url)) {
-            Text(CLEARTEXT_WARNING, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = httpConfirmed, onCheckedChange = { httpConfirmed = it }, enabled = !busy)
-                Text("Allow HTTP for this server")
-            }
-        }
+        if (isPlainHttp(url)) Text(CLEARTEXT_WARNING, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
         if (httpRetry != null && !busy) TextButton(onClick = { url = httpRetry!! }) {
             Text("Use HTTP instead…")
         }
@@ -159,7 +152,7 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
-            Button(enabled = !busy && !needsHttpConfirmation(url, httpConfirmed), onClick = {
+            Button(enabled = !busy, onClick = {
                 error = null
                 httpRetry = null
                 busy = true
