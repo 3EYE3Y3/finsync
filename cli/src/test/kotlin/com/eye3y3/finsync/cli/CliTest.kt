@@ -12,6 +12,36 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CliTest {
+    @Test fun httpRequiresExplicitOptInBeforeConnecting() {
+        val dir = Files.createTempDirectory("finsync-cli-test")
+        try {
+            val creds = dir.resolve("c.json")
+            for (server in listOf("http://192.168.1.10:8096", "HTTP://nas.local:8096", "http://music.example.com")) {
+                val (code, text) = run("login", "--server", server, creds = creds)
+                assertEquals(EXIT_ERROR, code)
+                assertTrue("does not encrypt" in text, text)
+                assertTrue("--allow-http" in text, text)
+            }
+            Credentials("http://nas.local:8096", "d", "u", "t").save(creds)
+            val (code, text) = run("status", creds = creds)
+            assertEquals(EXIT_ERROR, code)
+            assertTrue("--allow-http" in text, text)
+            assertTrue(Args.parse(listOf("login", "--server", "http://nas.local", "--allow-http")).flag("allow-http"))
+        } finally {
+            @OptIn(kotlin.io.path.ExperimentalPathApi::class) dir.deleteRecursively()
+        }
+    }
+
+    @Test fun explicitHttpOptInKeepsWarningAndAllowsConnection() {
+        val buf = ByteArrayOutputStream()
+        val cli = Cli(PrintStream(buf))
+        cli.checkTransport("http://nas.local:8096", Args.parse(listOf("login", "--allow-http")))
+        assertTrue("does not encrypt" in buf.toString())
+        buf.reset()
+        cli.checkTransport("https://nas.local:8096", Args.parse(listOf("login")))
+        assertEquals("", buf.toString())
+    }
+
     @Test fun sizesParse() {
         assertEquals(5L shl 30, parseSize("5G"))
         assertEquals(500L shl 20, parseSize("500M"))

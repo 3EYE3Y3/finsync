@@ -62,6 +62,9 @@ import com.eye3y3.finsync.createHttpClient
 import com.eye3y3.finsync.jellyfin.FinSyncError
 import com.eye3y3.finsync.jellyfin.JellyfinClient
 import com.eye3y3.finsync.jellyfin.ServerConfig
+import com.eye3y3.finsync.jellyfin.CLEARTEXT_WARNING
+import com.eye3y3.finsync.jellyfin.isPlainHttp
+import com.eye3y3.finsync.jellyfin.normaliseServerUrl
 import com.eye3y3.finsync.plan.SyncPlan
 import com.eye3y3.finsync.app.demo.DemoServer
 import kotlinx.coroutines.Dispatchers
@@ -114,7 +117,9 @@ private fun App() {
 private fun ServerScreen(s: Settings, done: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var url by rememberSaveable { mutableStateOf(s.server ?: "http://") }
+    var url by rememberSaveable { mutableStateOf(s.server ?: "") }
+    var httpConfirmed by remember(url) { mutableStateOf(false) }
+    var httpRetry by remember(url) { mutableStateOf<String?>(null) }
     var usePassword by rememberSaveable { mutableStateOf(false) }
     var user by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -126,12 +131,18 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
     Column(Modifier.verticalScroll(rememberScrollState())) {
         Title("Find your server")
         Body("Type the address of your Jellyfin server, as you would in a browser.")
-        OutlinedTextField(url, { url = it }, label = { Text("Server address") }, placeholder = { Text("http://192.168.1.10:8096") },
+        OutlinedTextField(url, { url = it }, enabled = !busy, label = { Text("Server address") }, placeholder = { Text("https://jellyfin.example.com") },
             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
-        if (plainHttpOutsideHome(url)) Text(
-            "This address isn't on your home network and doesn't use https, so others on the network could read your sign-in. Use https://, or a VPN such as Tailscale.",
-            color = MaterialTheme.colorScheme.error, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp),
-        )
+        if (isPlainHttp(url)) {
+            Text(CLEARTEXT_WARNING, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = httpConfirmed, onCheckedChange = { httpConfirmed = it }, enabled = !busy)
+                Text("Allow HTTP for this server")
+            }
+        }
+        if (httpRetry != null && !busy) TextButton(onClick = { url = httpRetry!! }) {
+            Text("Use HTTP instead…")
+        }
         if (usePassword) {
             OutlinedTextField(user, { user = it }, label = { Text("User name") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
             OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true,
@@ -148,15 +159,21 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
-            Button(enabled = !busy, onClick = {
+            Button(enabled = !busy && !needsHttpConfirmation(url, httpConfirmed), onClick = {
                 error = null
+                httpRetry = null
                 busy = true
                 job = scope.launch {
                     val http = createHttpClient()
                     try {
-                        val base = normaliseUrl(url)
+                        val base = normaliseServerUrl(url)
                         val client = JellyfinClient(http, ServerConfig(base, s.deviceId, "FinSync on ${Build.MODEL}"))
-                        client.serverInfo()
+                        try {
+                            client.serverInfo()
+                        } catch (e: FinSyncError.ServerUnreachable) {
+                            if (base.startsWith("https://")) httpRetry = "http://" + base.removePrefix("https://")
+                            throw e
+                        }
                         val session = if (usePassword) client.signInWithPassword(user.trim(), password)
                         else client.signInWithQuickConnect(10 * 60_000L) { code = it }
                         if (s.server != base) s.clearSelection()
@@ -182,13 +199,6 @@ private fun ServerScreen(s: Settings, done: () -> Unit) {
             done()
         }, modifier = Modifier.padding(top = 4.dp)) { Text("No server yet? Try it with sample music", fontSize = 14.sp) }
     }
-}
-
-private fun normaliseUrl(raw: String): String {
-    var u = raw.trim().trimEnd('/')
-    require(u.isNotEmpty() && u != "http:" && u != "https:" && u != "http:/")
-    if (!u.startsWith("http://") && !u.startsWith("https://")) u = "http://$u"
-    return u
 }
 
 // --- 2. Where the music goes -------------------------------------------------------------------

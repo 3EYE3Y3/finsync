@@ -8,7 +8,7 @@ class Args(val command: String?, private val values: Map<String, List<String>>, 
     fun require(name: String): String = get(name) ?: throw IllegalArgumentException("Missing --$name. Run finsync without arguments for help.")
 
     companion object {
-        private val FLAG_NAMES = setOf("allow-large-delete", "list")
+        private val FLAG_NAMES = setOf("allow-large-delete", "list", "allow-http")
 
         fun parse(argv: List<String>): Args {
             val values = HashMap<String, MutableList<String>>()

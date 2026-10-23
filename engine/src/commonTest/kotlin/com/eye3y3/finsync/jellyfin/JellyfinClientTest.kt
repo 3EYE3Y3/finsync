@@ -24,6 +24,40 @@ class JellyfinClientTest {
     private fun client(token: String? = null, handler: MockRequestHandleScope.(HttpRequestData) -> HttpResponseData) =
         JellyfinClient(HttpClient(MockEngine { handler(it) }), cfg, token)
 
+    @Test fun schemeLessPasswordAndTokenRequestsUseHttps() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val http = HttpClient(MockEngine {
+            requests += it
+            respond("""{"AccessToken":"T","User":{"Id":"u1","Name":"alex"}}""", headers = json)
+        })
+        try {
+            val c = JellyfinClient(http, cfg.copy(baseUrl = "nas.local:8096/jellyfin"))
+            c.signInWithPassword("alex", "pw")
+            c.serverInfo()
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.url.toString().startsWith("https://nas.local:8096/jellyfin/") })
+            assertTrue(requests.last().headers[HttpHeaders.Authorization]!!.contains("Token=\"T\""))
+        } finally {
+            http.close()
+        }
+    }
+
+    @Test fun failedHttpsDoesNotRetryHttp() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val http = HttpClient(MockEngine {
+            requests += it
+            throw IllegalStateException("TLS connection failed")
+        })
+        try {
+            val c = JellyfinClient(http, cfg.copy(baseUrl = "nas.local:8096"))
+            assertFailsWith<FinSyncError.ServerUnreachable> { c.signInWithPassword("alex", "pw") }
+            assertEquals(1, requests.size)
+            assertEquals("https", requests.single().url.protocol.name)
+        } finally {
+            http.close()
+        }
+    }
+
     @Test fun authorizationHeaderHasDeviceAndToken() = runTest {
         var seen = ""
         val c = client("abc") { seen = it.headers[HttpHeaders.Authorization]!!; respond("""{"Id":"s1","ServerName":"Home","Version":"10.11"}""", headers = json) }

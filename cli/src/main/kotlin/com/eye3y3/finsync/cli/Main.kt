@@ -4,6 +4,9 @@ import com.eye3y3.finsync.createHttpClient
 import com.eye3y3.finsync.jellyfin.FinSyncError
 import com.eye3y3.finsync.jellyfin.JellyfinClient
 import com.eye3y3.finsync.jellyfin.ServerConfig
+import com.eye3y3.finsync.jellyfin.CLEARTEXT_WARNING
+import com.eye3y3.finsync.jellyfin.isPlainHttp
+import com.eye3y3.finsync.jellyfin.normaliseServerUrl
 import com.eye3y3.finsync.plan.PlanOptions
 import com.eye3y3.finsync.plan.SyncPlan
 import com.eye3y3.finsync.plan.toJson
@@ -27,7 +30,7 @@ const val EXIT_SIGNED_OUT = 3
 private val HELP = """
     finsync - mirror a Jellyfin music library to a folder or card (private test tool)
 
-      finsync login  --server http://HOST:8096 [--wait 300]
+      finsync login  --server https://HOST:8920 [--wait 300] [--allow-http]
       finsync status
       finsync plan   --dest DIR [--root PATH] [--library NAME] [--list] [--json FILE]
       finsync sync   --dest DIR [--max-bytes 5G] [--artist NAME]... [--allow-large-delete]
@@ -36,6 +39,9 @@ private val HELP = """
 
     --reuse CARD_DIR: music already in CARD_DIR (outside DIR) that matches library tracks by content is
     moved into the mirror instead of downloaded; spare copies are only listed until remove-spares.
+
+    Addresses without a scheme use HTTPS. For HTTP, explicitly use http://HOST:8096 and --allow-http.
+    --allow-http is required on each command using an HTTP server, including saved accounts.
 
     Exit codes: 0 ok, 1 error, 2 deletion brake stopped the sync, 3 not signed in.
 """.trimIndent()
@@ -63,7 +69,7 @@ class Cli(private val out: PrintStream = System.out, private val credentialsPath
 
     private suspend fun dispatch(args: Args, http: HttpClient): Int = when (args.command) {
         "login" -> login(args, http)
-        "status" -> status(http)
+        "status" -> status(args, http)
         "plan" -> plan(args, http)
         "sync" -> sync(args, http)
         "remove-spares" -> removeSpares(args, http)
@@ -71,11 +77,17 @@ class Cli(private val out: PrintStream = System.out, private val credentialsPath
     }
 
     private suspend fun login(args: Args, http: HttpClient): Int {
-        val server = args.require("server").trimEnd('/')
+        val server = normaliseServerUrl(args.require("server"))
+        checkTransport(server, args)
         val waitSeconds = args.get("wait")?.toLongOrNull() ?: 300L
         val deviceId = Credentials.load(credentialsPath)?.deviceId ?: UUID.randomUUID().toString()
         val client = JellyfinClient(http, ServerConfig(server, deviceId, "FinSync CLI on ${hostName()}"))
-        val info = client.serverInfo()
+        val info = try {
+            client.serverInfo()
+        } catch (e: FinSyncError.ServerUnreachable) {
+            if (server.startsWith("https://")) out.println("HTTPS could not connect. If your server uses HTTP, run login again with an explicit http:// address and --allow-http.")
+            throw e
+        }
         out.println("Connected to ${info.name} (Jellyfin ${info.version}).")
         val session = client.signInWithQuickConnect(waitSeconds * 1000) { code ->
             out.println("Quick Connect code: $code")
@@ -86,8 +98,8 @@ class Cli(private val out: PrintStream = System.out, private val credentialsPath
         return EXIT_OK
     }
 
-    private suspend fun status(http: HttpClient): Int {
-        val client = signedInClient(http) ?: return EXIT_SIGNED_OUT
+    private suspend fun status(args: Args, http: HttpClient): Int {
+        val client = signedInClient(args, http) ?: return EXIT_SIGNED_OUT
         val info = client.serverInfo()
         val user = client.currentUser()
         out.println("Server:    ${info.name} (Jellyfin ${info.version}) at ${client.config.baseUrl}")
@@ -129,7 +141,7 @@ class Cli(private val out: PrintStream = System.out, private val credentialsPath
 
     private fun engine(args: Args, http: HttpClient): SyncEngine? {
         val dest = args.require("dest")
-        val client = signedInClient(http) ?: return null
+        val client = signedInClient(args, http) ?: return null
         val options = SyncOptions(
             plan = PlanOptions(
                 root = args.get("root"),
@@ -144,13 +156,21 @@ class Cli(private val out: PrintStream = System.out, private val credentialsPath
         return SyncEngine(client, FileSystem.SYSTEM, File(dest).absoluteFile.path.toPath(), options)
     }
 
-    private fun signedInClient(http: HttpClient): JellyfinClient? {
+    private fun signedInClient(args: Args, http: HttpClient): JellyfinClient? {
         val c = Credentials.load(credentialsPath)
         if (c == null) {
-            out.println("You are not signed in. Run: finsync login --server http://HOST:8096")
+            out.println("You are not signed in. Run: finsync login --server https://HOST:8920")
             return null
         }
+        checkTransport(normaliseServerUrl(c.server), args)
         return JellyfinClient(http, ServerConfig(c.server, c.deviceId, "FinSync CLI on ${hostName()}"), c.token)
+    }
+
+    internal fun checkTransport(server: String, args: Args) {
+        if (isPlainHttp(server)) {
+            out.println(CLEARTEXT_WARNING)
+            require(args.flag("allow-http")) { "To use this HTTP server, run again with --allow-http." }
+        }
     }
 
     private fun describe(plan: SyncPlan, list: Boolean) {

@@ -51,7 +51,7 @@ data class LyricLine(val text: String, val startTicks: Long?)
 
 /** Talks to one Jellyfin server. The [http] client (and its engine) is supplied by the caller. */
 class JellyfinClient(private val http: HttpClient, val config: ServerConfig, var token: String? = null) {
-    private val base = config.baseUrl.trimEnd('/')
+    private val base = normaliseServerUrl(config.baseUrl)
 
     suspend fun serverInfo(): ServerInfo {
         val o = getJson("/System/Info/Public").obj()
